@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -28,8 +29,10 @@ func main() {
 		effort := time.Duration(100+rand.Intn(300)) * time.Millisecond
 		<-time.After(effort)
 		stat := statuses[rand.Intn(len(statuses))]
+		msg := fmt.Sprintf("work took this long: %v\n", effort)
 		w.WriteHeader(int(stat))
-		fmt.Fprintf(w, "work took this long: %v\n", effort)
+		fmt.Fprintf(w, msg)
+		fmt.Fprintf(os.Stderr, msg)
 	}
 	http.HandleFunc("/", workHandler)
 	addr := ":3000"
