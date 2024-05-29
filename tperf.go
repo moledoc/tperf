@@ -1,6 +1,9 @@
 package tperf
 
 import (
+	"cmp"
+	"math"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -22,55 +25,19 @@ type Result struct {
 	Error    error
 }
 
-type rps int // request per second
+type rps float64 // request per second
 
 type Report struct {
-	TestName   string
-	P50        time.Duration
-	P90        time.Duration
-	P99        time.Duration
-	Avg        time.Duration
-	Std        time.Duration
-	Throughput rps
-	Errors     int
-}
-
-type helperConf struct {
-	wg         sync.WaitGroup
-	test       func(any) (any, error)
-	step       float64
-	startBound float64
-	endBound   float64
-	compare    func(float64, float64) bool
-}
-
-func (plan *Plan) helper(hc helperConf, iters int) {
-	plan.T.Helper()
-	var wg sync.WaitGroup
-	for i := 0; i < iters; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			req, err := plan.Setup()
-			if err != nil {
-				return
-			}
-			resp, err := hc.test(req)
-			if err != nil {
-				return
-			}
-			plan.Cleanup(resp)
-		}()
-	}
-	wg.Wait()
-}
-
-func (plan *Plan) loop(conf helperConf) {
-	plan.T.Helper()
-	for i := float64(conf.startBound); conf.compare(i, conf.endBound); i += conf.step {
-		go plan.helper(conf, int(i))
-		<-time.After(1 * time.Second)
-	}
+	TestName     string
+	FullDuration time.Duration
+	RequestCount int
+	P50          time.Duration
+	P90          time.Duration
+	P99          time.Duration
+	Avg          time.Duration
+	Std          time.Duration
+	Throughput   rps
+	Errors       int
 }
 
 func (plan *Plan) Execute() []Result {
@@ -81,82 +48,7 @@ func (plan *Plan) Execute() []Result {
 	collector := make(chan Result, load*plan.RequestPerSecond)
 	var wg sync.WaitGroup
 
-	rampMiddle := func(req any) (any, error) {
-		return plan.Test(req)
-	}
-	rampConf := helperConf{
-		wg:         wg,
-		test:       rampMiddle,
-		step:       float64(plan.RequestPerSecond) / plan.Rampup.Seconds(),
-		startBound: 0,
-		endBound:   float64(plan.RequestPerSecond),
-		compare:    func(a float64, b float64) bool { return a < b },
-	}
-
-	testMiddle := func(req any) (any, error) {
-		start := time.Now()
-		resp, err := plan.Test(req)
-		dur := time.Since(start)
-		collector <- Result{Duration: dur, Error: err}
-		return resp, err
-	}
-	testConf := helperConf{
-		wg:         wg,
-		test:       testMiddle,
-		step:       1,
-		startBound: 0,
-		endBound:   float64(plan.RequestPerSecond),
-		compare:    func(a float64, b float64) bool { return a < b },
-	}
-
-	// TODO: ramp-up
-	plan.loop(rampConf)
-	plan.T.Logf("Rampup done\n")
-
-	// TODO: hit
-	for i := 0; i < load; i++ {
-		iterStart := time.Now()
-		plan.loop(testConf)
-		iterDuration := time.Since(iterStart)
-		<-time.After((time.Duration(1) - iterDuration) * time.Second)
-	}
-	plan.T.Logf("Test done\n")
-
-	// TODO: ramp-down
-	rampConf.step *= -1
-	newStart := rampConf.endBound
-	newEnd := rampConf.startBound
-	rampConf.startBound = newStart
-	rampConf.endBound = newEnd
-	rampConf.compare = func(a float64, b float64) bool { return a > b }
-	plan.loop(rampConf)
-
-	plan.T.Logf("Rampdown done\n")
-
-	wg.Wait()
-	close(collector)
-
-	results := make([]Result, len(collector))
-	{
-		i := 0
-		for res := range collector {
-			results[i] = res
-			i++
-		}
-	}
-
-	return results
-}
-
-func (plan *Plan) Execute2() []Result {
-	plan.T.Helper()
-
-	load := max(int(plan.LoadFor.Seconds()), 1)
-
-	collector := make(chan Result, load*plan.RequestPerSecond)
-	var wg sync.WaitGroup
-
-	// TODO: ramp-up
+	// ramp-up
 	step := float64(plan.RequestPerSecond) / max(plan.Rampup.Seconds(), 1)
 	for rps := float64(0); plan.Rampup.Seconds() > 0 && rps < float64(plan.RequestPerSecond); rps += step {
 		iterStart := time.Now()
@@ -180,7 +72,7 @@ func (plan *Plan) Execute2() []Result {
 	}
 	plan.T.Logf("Rampup done\n")
 
-	// TODO: hit
+	// hit
 	for i := 0; i < load; i++ {
 		iterStart := time.Now()
 		for i := float64(0); i < float64(plan.RequestPerSecond); i++ {
@@ -206,7 +98,7 @@ func (plan *Plan) Execute2() []Result {
 	}
 	plan.T.Logf("Test done\n")
 
-	// TODO: ramp-down
+	// ramp-down
 	for rps := float64(plan.RequestPerSecond); plan.Rampup.Seconds() > 0 && rps > float64(0); rps -= step {
 		iterStart := time.Now()
 		for i := float64(0); i < rps; i++ {
@@ -243,4 +135,50 @@ func (plan *Plan) Execute2() []Result {
 	}
 
 	return results
+}
+
+func (plan *Plan) Summary(results []Result) Report {
+	// TODO: sort results based on duration
+	slices.SortFunc(results, func(a Result, b Result) int {
+		return cmp.Compare(a.Duration, b.Duration)
+	})
+	plan.T.Logf("sorted: %v\n", results)
+	mean := func(arr []Result) time.Duration {
+		var avg int64
+		for _, res := range results {
+			avg += res.Duration.Milliseconds()
+		}
+		return time.Duration(avg/int64(len(results))) * time.Millisecond
+	}
+	std := func(arr []Result, avg int64) time.Duration {
+		var std int64
+		for _, res := range results {
+			step := avg - res.Duration.Milliseconds()
+			std += step * step
+		}
+		return time.Duration(math.Sqrt(float64(std/int64(len(results)-1)))) * time.Millisecond
+	}
+	avg := mean(results)
+	errCount := 0
+	var dur time.Duration
+	for i := 0; i < len(results); i++ {
+		if results[i].Error != nil {
+			errCount++
+		}
+		dur += results[i].Duration
+	}
+	report := Report{
+		TestName:     plan.T.Name(),
+		FullDuration: dur,
+		RequestCount: len(results),
+		P50:          results[len(results)*50/100].Duration,
+		P90:          results[len(results)*90/100].Duration,
+		P99:          results[len(results)*99/100].Duration,
+		Avg:          avg,
+		Std:          std(results, avg.Milliseconds()),
+		Throughput:   rps(float64(len(results)) / dur.Seconds()),
+		Errors:       errCount,
+	}
+	plan.T.Logf("%v\n", report)
+	return report
 }

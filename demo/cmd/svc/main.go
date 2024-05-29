@@ -11,8 +11,7 @@ import (
 type status int
 
 var (
-	statuses []status = []status{
-		status(http.StatusOK),
+	errStatuses []status = []status{
 		status(http.StatusBadRequest),
 		status(http.StatusUnauthorized),
 		status(http.StatusForbidden),
@@ -28,7 +27,13 @@ func main() {
 
 		effort := time.Duration(100+rand.Intn(300)) * time.Millisecond
 		<-time.After(effort)
-		stat := statuses[rand.Intn(len(statuses))]
+		weight := rand.Intn(10)
+		var stat status
+		if weight < 8 {
+			stat = status(http.StatusOK)
+		} else {
+			stat = errStatuses[rand.Intn(len(errStatuses))]
+		}
 		msg := fmt.Sprintf("work took this long: %v\n", effort)
 		w.WriteHeader(int(stat))
 		fmt.Fprintf(w, msg)

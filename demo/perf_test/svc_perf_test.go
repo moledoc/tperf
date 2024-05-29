@@ -17,19 +17,25 @@ func TestXxx(t *testing.T) {
 	test := func(req any) (any, error) {
 		route := req.(string)
 		path := fmt.Sprintf("http://localhost:3000/%s", route)
-		return http.Get(path)
+		resp, respErr := http.Get(path)
+		var err error
+		if respErr != nil || resp.StatusCode != http.StatusOK {
+			err = fmt.Errorf("statuscode: %v err: %v", resp.StatusCode, err)
+		}
+		return resp, err
 	}
 	cleanup := func(any) {
 	}
 	plan := tperf.Plan{
 		T:                t,
-		Rampup:           time.Duration(10 * time.Second),
-		RequestPerSecond: 10,
-		LoadFor:          time.Duration(2 * time.Second),
+		Rampup:           time.Duration(5 * time.Second),
+		RequestPerSecond: 2,
+		LoadFor:          time.Duration(4 * time.Second),
 		Setup:            setup,
 		Test:             test,
 		Cleanup:          cleanup,
 	}
-	results := plan.Execute2()
-	fmt.Println(results)
+	results := plan.Execute()
+	// fmt.Println(results)
+	plan.Summary(results)
 }
