@@ -18,6 +18,7 @@ type Plan struct {
 
 type Result struct {
 	Duration time.Duration
+	Response any
 	Error    error
 }
 
@@ -129,6 +130,103 @@ func (plan *Plan) Execute() []Result {
 	rampConf.endBound = newEnd
 	rampConf.compare = func(a float64, b float64) bool { return a > b }
 	plan.loop(rampConf)
+
+	plan.T.Logf("Rampdown done\n")
+
+	wg.Wait()
+	close(collector)
+
+	results := make([]Result, len(collector))
+	{
+		i := 0
+		for res := range collector {
+			results[i] = res
+			i++
+		}
+	}
+
+	return results
+}
+
+func (plan *Plan) Execute2() []Result {
+	plan.T.Helper()
+
+	load := max(int(plan.LoadFor.Seconds()), 1)
+
+	collector := make(chan Result, load*plan.RequestPerSecond)
+	var wg sync.WaitGroup
+
+	// TODO: ramp-up
+	step := float64(plan.RequestPerSecond) / max(plan.Rampup.Seconds(), 1)
+	for rps := float64(0); plan.Rampup.Seconds() > 0 && rps < float64(plan.RequestPerSecond); rps += step {
+		iterStart := time.Now()
+		for i := float64(0); i < rps; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				req, err := plan.Setup()
+				if err != nil {
+					return
+				}
+				resp, err := plan.Test(req)
+				if err != nil {
+					return
+				}
+				plan.Cleanup(resp)
+			}()
+		}
+		iterDuration := time.Since(iterStart)
+		<-time.After(max(time.Duration(1*time.Second)-iterDuration, 0))
+	}
+	plan.T.Logf("Rampup done\n")
+
+	// TODO: hit
+	for i := 0; i < load; i++ {
+		iterStart := time.Now()
+		for i := float64(0); i < float64(plan.RequestPerSecond); i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				req, err := plan.Setup()
+				if err != nil {
+					return
+				}
+				start := time.Now()
+				resp, err := plan.Test(req)
+				dur := time.Since(start)
+				collector <- Result{Duration: dur, Error: err}
+				if err != nil {
+					return
+				}
+				plan.Cleanup(resp)
+			}()
+		}
+		iterDuration := time.Since(iterStart)
+		<-time.After(max(time.Duration(1*time.Second)-iterDuration, 0))
+	}
+	plan.T.Logf("Test done\n")
+
+	// TODO: ramp-down
+	for rps := float64(plan.RequestPerSecond); plan.Rampup.Seconds() > 0 && rps > float64(0); rps -= step {
+		iterStart := time.Now()
+		for i := float64(0); i < rps; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				req, err := plan.Setup()
+				if err != nil {
+					return
+				}
+				resp, err := plan.Test(req)
+				if err != nil {
+					return
+				}
+				plan.Cleanup(resp)
+			}()
+		}
+		iterDuration := time.Since(iterStart)
+		<-time.After(max(time.Duration(1*time.Second)-iterDuration, 0))
+	}
 
 	plan.T.Logf("Rampdown done\n")
 

@@ -11,22 +11,25 @@ import (
 
 func TestXxx(t *testing.T) {
 	setup := func() (any, error) {
-		return nil, nil
+		route := "work"
+		return route, nil
 	}
 	test := func(req any) (any, error) {
-		return http.Get("http://localhost:3000")
+		route := req.(string)
+		path := fmt.Sprintf("http://localhost:3000/%s", route)
+		return http.Get(path)
 	}
 	cleanup := func(any) {
 	}
 	plan := tperf.Plan{
 		T:                t,
-		Rampup:           time.Duration(0 * time.Second),
-		RequestPerSecond: 2,
-		LoadFor:          time.Duration(3 * time.Second),
+		Rampup:           time.Duration(10 * time.Second),
+		RequestPerSecond: 10,
+		LoadFor:          time.Duration(2 * time.Second),
 		Setup:            setup,
 		Test:             test,
 		Cleanup:          cleanup,
 	}
-	results := plan.Execute()
+	results := plan.Execute2()
 	fmt.Println(results)
 }

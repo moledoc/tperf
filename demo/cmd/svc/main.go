@@ -34,7 +34,7 @@ func main() {
 		fmt.Fprintf(w, msg)
 		fmt.Fprintf(os.Stderr, msg)
 	}
-	http.HandleFunc("/", workHandler)
+	http.HandleFunc("/work", workHandler)
 	addr := ":3000"
 	fmt.Printf("Serving on %s\n", addr)
 	http.ListenAndServe(addr, nil)
