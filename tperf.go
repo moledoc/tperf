@@ -13,9 +13,9 @@ import (
 
 type Plan struct {
 	T                *testing.T
-	Rampup           time.Duration
-	RampupCounts     []int
-	RampdownCounts   []int
+	Ramping          time.Duration
+	rampups          []int
+	rampdowns        []int
 	RequestPerSecond int
 	LoadFor          time.Duration
 	Setup            func() (any, error)
@@ -29,23 +29,21 @@ type Result struct {
 	Error    error
 }
 
-type rps float64 // request per second
-
 type Report struct {
-	TestName       string
-	FullDuration   time.Duration
-	RequestCount   int
-	P50            time.Duration
-	P90            time.Duration
-	P95            time.Duration
-	P99            time.Duration
-	Avg            time.Duration
-	Std            time.Duration
-	Throughput     rps
-	Errors         int
-	Rampup         time.Duration
-	RampupCounts   []int
-	RampdownCounts []int
+	TestName     string
+	FullDuration time.Duration
+	RequestCount int
+	P50          time.Duration
+	P90          time.Duration
+	P95          time.Duration
+	P99          time.Duration
+	Avg          time.Duration
+	Std          time.Duration
+	Throughput   float64 // req/s
+	Errors       int
+	Ramping      time.Duration
+	rampups      []int
+	rampdowns    []int
 }
 
 func (r Report) String() string {
@@ -68,9 +66,9 @@ func (r Report) String() string {
 		"Std", r.Std,
 		"Throughput (req/s)", r.Throughput,
 		"Error count", r.Errors,
-		"Ramp-up", r.Rampup,
-		"Ramp-up request counts", r.RampupCounts,
-		"Ramp-down request counts", r.RampdownCounts,
+		"Ramping", r.Ramping,
+		"Ramp-up req/s", r.rampups,
+		"Ramp-down req/s", r.rampdowns,
 	)
 }
 
@@ -83,9 +81,9 @@ func (plan *Plan) Execute() []Result {
 	var wg sync.WaitGroup
 
 	// ramp-up
-	step := float64(plan.RequestPerSecond) / max(plan.Rampup.Seconds(), 1)
-	var rampupCounts []int
-	for rps := float64(1); plan.Rampup.Seconds() > 0 && rps <= float64(plan.RequestPerSecond)+step; rps += step {
+	step := float64(plan.RequestPerSecond) / max(plan.Ramping.Seconds(), 1)
+	var rampups []int
+	for rps := float64(1); 0 < plan.Ramping.Seconds() && rps <= float64(plan.RequestPerSecond); rps += step {
 		iterStart := time.Now()
 		j := 0
 		for i := float64(0); i < rps; i++ {
@@ -104,7 +102,7 @@ func (plan *Plan) Execute() []Result {
 				plan.Cleanup(resp)
 			}()
 		}
-		rampupCounts = append(rampupCounts, j)
+		rampups = append(rampups, j)
 		iterDuration := time.Since(iterStart)
 		<-time.After(max(1*time.Second-iterDuration, 0))
 	}
@@ -137,8 +135,8 @@ func (plan *Plan) Execute() []Result {
 	plan.T.Logf("Test done\n")
 
 	// ramp-down
-	var rampdownCounts []int
-	for rps := float64(plan.RequestPerSecond); plan.Rampup.Seconds() > 0 && rps > float64(step); rps -= step {
+	var rampdowns []int
+	for rps := float64(plan.RequestPerSecond); 0 < plan.Ramping.Seconds() && float64(1) <= rps; rps -= step {
 		iterStart := time.Now()
 		j := 0
 		for i := float64(0); i < rps; i++ {
@@ -157,7 +155,7 @@ func (plan *Plan) Execute() []Result {
 				plan.Cleanup(resp)
 			}()
 		}
-		rampdownCounts = append(rampdownCounts, j)
+		rampdowns = append(rampdowns, j)
 		iterDuration := time.Since(iterStart)
 		<-time.After(max(time.Duration(1*time.Second)-iterDuration, 0))
 	}
@@ -175,8 +173,8 @@ func (plan *Plan) Execute() []Result {
 			i++
 		}
 	}
-	plan.RampupCounts = rampupCounts
-	plan.RampdownCounts = rampdownCounts
+	plan.rampups = rampups
+	plan.rampdowns = rampdowns
 
 	return results
 }
@@ -210,20 +208,20 @@ func (plan *Plan) Summary(results []Result) Report {
 		dur += results[i].Duration
 	}
 	report := Report{
-		TestName:       plan.T.Name(),
-		FullDuration:   dur,
-		RequestCount:   len(results),
-		P50:            results[len(results)*50/100].Duration,
-		P90:            results[len(results)*90/100].Duration,
-		P95:            results[len(results)*95/100].Duration,
-		P99:            results[len(results)*99/100].Duration,
-		Avg:            avg,
-		Std:            std(results, avg.Milliseconds()),
-		Throughput:     rps(float64(len(results)) / dur.Seconds()),
-		Errors:         errCount,
-		Rampup:         plan.Rampup,
-		RampupCounts:   plan.RampupCounts,
-		RampdownCounts: plan.RampdownCounts,
+		TestName:     plan.T.Name(),
+		FullDuration: dur,
+		RequestCount: len(results),
+		P50:          results[len(results)*50/100].Duration,
+		P90:          results[len(results)*90/100].Duration,
+		P95:          results[len(results)*95/100].Duration,
+		P99:          results[len(results)*99/100].Duration,
+		Avg:          avg,
+		Std:          std(results, avg.Milliseconds()),
+		Throughput:   float64(len(results)) / dur.Seconds(),
+		Errors:       errCount,
+		Ramping:      plan.Ramping,
+		rampups:      plan.rampups,
+		rampdowns:    plan.rampdowns,
 	}
 	fmt.Printf("%v\n", report)
 	return report

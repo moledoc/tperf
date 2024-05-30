@@ -28,9 +28,9 @@ func TestXxx(t *testing.T) {
 	}
 	plan := tperf.Plan{
 		T:                t,
-		Rampup:           time.Duration(6 * time.Second),
-		RequestPerSecond: 4,
-		LoadFor:          time.Duration(4 * time.Second),
+		Ramping:          time.Duration(6 * time.Second),
+		RequestPerSecond: 10,
+		LoadFor:          time.Duration(2 * time.Second),
 		Setup:            setup,
 		Test:             test,
 		Cleanup:          cleanup,
