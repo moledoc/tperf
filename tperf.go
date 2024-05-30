@@ -2,6 +2,7 @@ package tperf
 
 import (
 	"cmp"
+	"fmt"
 	"math"
 	"slices"
 	"sync"
@@ -33,11 +34,16 @@ type Report struct {
 	RequestCount int
 	P50          time.Duration
 	P90          time.Duration
+	P95          time.Duration
 	P99          time.Duration
 	Avg          time.Duration
 	Std          time.Duration
 	Throughput   rps
 	Errors       int
+}
+
+func (r Report) String() string {
+	return fmt.Sprintf("Test name: %s\nFull duration: %v\nRequest count: %v\nP50: %v\nP90: %v\nP95: %v\nP99: %v\nAvgerage: %v\nStandard deviation: %v\nThroughput: %v requests/second\nErrors count: %v", r.TestName, r.FullDuration, r.RequestCount, r.P50, r.P90, r.P95, r.P99, r.Avg, r.Std, r.Throughput, r.Errors)
 }
 
 func (plan *Plan) Execute() []Result {
@@ -50,7 +56,7 @@ func (plan *Plan) Execute() []Result {
 
 	// ramp-up
 	step := float64(plan.RequestPerSecond) / max(plan.Rampup.Seconds(), 1)
-	for rps := float64(0); plan.Rampup.Seconds() > 0 && rps < float64(plan.RequestPerSecond); rps += step {
+	for rps := float64(0); plan.Rampup.Seconds() > 0 && rps <= float64(plan.RequestPerSecond); rps += step {
 		iterStart := time.Now()
 		for i := float64(0); i < rps; i++ {
 			wg.Add(1)
@@ -68,14 +74,14 @@ func (plan *Plan) Execute() []Result {
 			}()
 		}
 		iterDuration := time.Since(iterStart)
-		<-time.After(max(time.Duration(1*time.Second)-iterDuration, 0))
+		<-time.After(max(1*time.Second-iterDuration, 0))
 	}
 	plan.T.Logf("Rampup done\n")
 
 	// hit
 	for i := 0; i < load; i++ {
 		iterStart := time.Now()
-		for i := float64(0); i < float64(plan.RequestPerSecond); i++ {
+		for i := 0; i < plan.RequestPerSecond; i++ {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -173,6 +179,7 @@ func (plan *Plan) Summary(results []Result) Report {
 		RequestCount: len(results),
 		P50:          results[len(results)*50/100].Duration,
 		P90:          results[len(results)*90/100].Duration,
+		P95:          results[len(results)*95/100].Duration,
 		P99:          results[len(results)*99/100].Duration,
 		Avg:          avg,
 		Std:          std(results, avg.Milliseconds()),

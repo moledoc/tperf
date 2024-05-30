@@ -19,7 +19,7 @@ func TestXxx(t *testing.T) {
 		path := fmt.Sprintf("http://localhost:3000/%s", route)
 		resp, respErr := http.Get(path)
 		var err error
-		if respErr != nil || resp.StatusCode != http.StatusOK {
+		if respErr != nil || resp == nil || resp.StatusCode != http.StatusOK {
 			err = fmt.Errorf("statuscode: %v err: %v", resp.StatusCode, err)
 		}
 		return resp, err
@@ -28,8 +28,8 @@ func TestXxx(t *testing.T) {
 	}
 	plan := tperf.Plan{
 		T:                t,
-		Rampup:           time.Duration(5 * time.Second),
-		RequestPerSecond: 2,
+		Rampup:           time.Duration(6 * time.Second),
+		RequestPerSecond: 4,
 		LoadFor:          time.Duration(4 * time.Second),
 		Setup:            setup,
 		Test:             test,
