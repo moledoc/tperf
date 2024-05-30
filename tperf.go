@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"math"
+	"reflect"
 	"slices"
 	"sync"
 	"testing"
@@ -13,6 +14,8 @@ import (
 type Plan struct {
 	T                *testing.T
 	Rampup           time.Duration
+	RampupCounts     []int
+	RampdownCounts   []int
 	RequestPerSecond int
 	LoadFor          time.Duration
 	Setup            func() (any, error)
@@ -29,37 +32,31 @@ type Result struct {
 type rps float64 // request per second
 
 type Report struct {
-	TestName              string
-	FullDuration          time.Duration
-	RequestCount          int
-	P50                   time.Duration
-	P90                   time.Duration
-	P95                   time.Duration
-	P99                   time.Duration
-	Avg                   time.Duration
-	Std                   time.Duration
-	Throughput            rps
-	Errors                int
-	RampUp                time.Duration
-	RampUpRequestCounts   []int
-	RampDownRequestCounts []int
+	TestName       string
+	FullDuration   time.Duration
+	RequestCount   int
+	P50            time.Duration
+	P90            time.Duration
+	P95            time.Duration
+	P99            time.Duration
+	Avg            time.Duration
+	Std            time.Duration
+	Throughput     rps
+	Errors         int
+	Rampup         time.Duration
+	RampupCounts   []int
+	RampdownCounts []int
 }
 
 func (r Report) String() string {
-	return fmt.Sprintf("\n"+
-		"----------------------------------------------\n"+
-		"%20s: %s\n"+
-		"%20s: %v\n"+
-		"%20s: %v\n"+
-		"%20s: %v\n"+
-		"%20s: %v\n"+
-		"%20s: %v\n"+
-		"%20s: %v\n"+
-		"%20s: %v\n"+
-		"%20s: %v\n"+
-		"%20s: %v req/s\n"+
-		"%20s: %v\n"+
-		"----------------------------------------------",
+	fieldCount := reflect.TypeOf(Report{}).NumField()
+	format := "\n----------------------------------------------\n"
+	for i := 0; i < fieldCount; i++ {
+		format += "%30s: %v\n"
+	}
+	format += "----------------------------------------------\n"
+	return fmt.Sprintf(
+		format,
 		"Test name", r.TestName,
 		"Full duration", r.FullDuration,
 		"Request count", r.RequestCount,
@@ -69,8 +66,11 @@ func (r Report) String() string {
 		"P99", r.P99,
 		"Avg", r.Avg,
 		"Std", r.Std,
-		"Throughput", r.Throughput,
+		"Throughput (req/s)", r.Throughput,
 		"Error count", r.Errors,
+		"Ramp-up", r.Rampup,
+		"Ramp-up request counts", r.RampupCounts,
+		"Ramp-down request counts", r.RampdownCounts,
 	)
 }
 
@@ -84,9 +84,12 @@ func (plan *Plan) Execute() []Result {
 
 	// ramp-up
 	step := float64(plan.RequestPerSecond) / max(plan.Rampup.Seconds(), 1)
-	for rps := float64(0); plan.Rampup.Seconds() > 0 && rps <= float64(plan.RequestPerSecond); rps += step {
+	var rampupCounts []int
+	for rps := float64(1); plan.Rampup.Seconds() > 0 && rps <= float64(plan.RequestPerSecond)+step; rps += step {
 		iterStart := time.Now()
+		j := 0
 		for i := float64(0); i < rps; i++ {
+			j++
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -101,6 +104,7 @@ func (plan *Plan) Execute() []Result {
 				plan.Cleanup(resp)
 			}()
 		}
+		rampupCounts = append(rampupCounts, j)
 		iterDuration := time.Since(iterStart)
 		<-time.After(max(1*time.Second-iterDuration, 0))
 	}
@@ -133,9 +137,12 @@ func (plan *Plan) Execute() []Result {
 	plan.T.Logf("Test done\n")
 
 	// ramp-down
-	for rps := float64(plan.RequestPerSecond); plan.Rampup.Seconds() > 0 && rps > float64(0); rps -= step {
+	var rampdownCounts []int
+	for rps := float64(plan.RequestPerSecond); plan.Rampup.Seconds() > 0 && rps > float64(step); rps -= step {
 		iterStart := time.Now()
+		j := 0
 		for i := float64(0); i < rps; i++ {
+			j++
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -150,6 +157,7 @@ func (plan *Plan) Execute() []Result {
 				plan.Cleanup(resp)
 			}()
 		}
+		rampdownCounts = append(rampdownCounts, j)
 		iterDuration := time.Since(iterStart)
 		<-time.After(max(time.Duration(1*time.Second)-iterDuration, 0))
 	}
@@ -167,16 +175,16 @@ func (plan *Plan) Execute() []Result {
 			i++
 		}
 	}
+	plan.RampupCounts = rampupCounts
+	plan.RampdownCounts = rampdownCounts
 
 	return results
 }
 
 func (plan *Plan) Summary(results []Result) Report {
-	// TODO: sort results based on duration
 	slices.SortFunc(results, func(a Result, b Result) int {
 		return cmp.Compare(a.Duration, b.Duration)
 	})
-	plan.T.Logf("sorted: %v\n", results)
 	mean := func(arr []Result) time.Duration {
 		var avg int64
 		for _, res := range results {
@@ -202,17 +210,20 @@ func (plan *Plan) Summary(results []Result) Report {
 		dur += results[i].Duration
 	}
 	report := Report{
-		TestName:     plan.T.Name(),
-		FullDuration: dur,
-		RequestCount: len(results),
-		P50:          results[len(results)*50/100].Duration,
-		P90:          results[len(results)*90/100].Duration,
-		P95:          results[len(results)*95/100].Duration,
-		P99:          results[len(results)*99/100].Duration,
-		Avg:          avg,
-		Std:          std(results, avg.Milliseconds()),
-		Throughput:   rps(float64(len(results)) / dur.Seconds()),
-		Errors:       errCount,
+		TestName:       plan.T.Name(),
+		FullDuration:   dur,
+		RequestCount:   len(results),
+		P50:            results[len(results)*50/100].Duration,
+		P90:            results[len(results)*90/100].Duration,
+		P95:            results[len(results)*95/100].Duration,
+		P99:            results[len(results)*99/100].Duration,
+		Avg:            avg,
+		Std:            std(results, avg.Milliseconds()),
+		Throughput:     rps(float64(len(results)) / dur.Seconds()),
+		Errors:         errCount,
+		Rampup:         plan.Rampup,
+		RampupCounts:   plan.RampupCounts,
+		RampdownCounts: plan.RampdownCounts,
 	}
 	fmt.Printf("%v\n", report)
 	return report
