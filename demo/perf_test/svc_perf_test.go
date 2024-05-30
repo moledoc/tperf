@@ -28,14 +28,15 @@ func TestXxx(t *testing.T) {
 	}
 	plan := tperf.Plan{
 		T:                t,
-		Ramping:          time.Duration(6 * time.Second),
+		Ramping:          time.Duration(0 * time.Second),
 		RequestPerSecond: 10,
-		LoadFor:          time.Duration(2 * time.Second),
+		LoadFor:          time.Duration(1 * time.Second),
 		Setup:            setup,
 		Test:             test,
 		Cleanup:          cleanup,
 	}
 	results := plan.Execute()
 	// fmt.Println(results)
-	plan.Summary(results)
+	report := plan.Summary(results)
+	report.Print()
 }

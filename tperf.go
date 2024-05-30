@@ -3,6 +3,7 @@ package tperf
 import (
 	"cmp"
 	"fmt"
+	"io"
 	"math"
 	"reflect"
 	"slices"
@@ -23,13 +24,13 @@ type Plan struct {
 	Cleanup          func(any)
 }
 
-type Result struct {
+type result struct {
 	Duration time.Duration
 	Response any
 	Error    error
 }
 
-type Report struct {
+type report struct {
 	TestName     string
 	FullDuration time.Duration
 	RequestCount int
@@ -46,13 +47,12 @@ type Report struct {
 	rampdowns    []int
 }
 
-func (r Report) String() string {
-	fieldCount := reflect.TypeOf(Report{}).NumField()
-	format := "\n----------------------------------------------\n"
+func (r report) String() string {
+	fieldCount := reflect.TypeOf(report{}).NumField()
+	format := fmt.Sprintf("\n%37s\n\n", "-- Summary --")
 	for i := 0; i < fieldCount; i++ {
 		format += "%30s: %v\n"
 	}
-	format += "----------------------------------------------\n"
 	return fmt.Sprintf(
 		format,
 		"Test name", r.TestName,
@@ -72,12 +72,20 @@ func (r Report) String() string {
 	)
 }
 
-func (plan *Plan) Execute() []Result {
+func (r report) Print() {
+	fmt.Println(r)
+}
+
+func (r report) Fprint(w io.Writer) {
+	fmt.Fprintf(w, r.String())
+}
+
+func (plan *Plan) Execute() []result {
 	plan.T.Helper()
 
 	load := max(int(plan.LoadFor.Seconds()), 1)
 
-	collector := make(chan Result, load*plan.RequestPerSecond)
+	collector := make(chan result, load*plan.RequestPerSecond)
 	var wg sync.WaitGroup
 
 	// ramp-up
@@ -122,7 +130,7 @@ func (plan *Plan) Execute() []Result {
 				start := time.Now()
 				resp, err := plan.Test(req)
 				dur := time.Since(start)
-				collector <- Result{Duration: dur, Error: err}
+				collector <- result{Duration: dur, Error: err}
 				if err != nil {
 					return
 				}
@@ -165,7 +173,7 @@ func (plan *Plan) Execute() []Result {
 	wg.Wait()
 	close(collector)
 
-	results := make([]Result, len(collector))
+	results := make([]result, len(collector))
 	{
 		i := 0
 		for res := range collector {
@@ -179,18 +187,18 @@ func (plan *Plan) Execute() []Result {
 	return results
 }
 
-func (plan *Plan) Summary(results []Result) Report {
-	slices.SortFunc(results, func(a Result, b Result) int {
+func (plan *Plan) Summary(results []result) report {
+	slices.SortFunc(results, func(a result, b result) int {
 		return cmp.Compare(a.Duration, b.Duration)
 	})
-	mean := func(arr []Result) time.Duration {
+	mean := func(arr []result) time.Duration {
 		var avg int64
 		for _, res := range results {
 			avg += res.Duration.Milliseconds()
 		}
 		return time.Duration(avg/int64(len(results))) * time.Millisecond
 	}
-	std := func(arr []Result, avg int64) time.Duration {
+	std := func(arr []result, avg int64) time.Duration {
 		var std int64
 		for _, res := range results {
 			step := avg - res.Duration.Milliseconds()
@@ -207,7 +215,7 @@ func (plan *Plan) Summary(results []Result) Report {
 		}
 		dur += results[i].Duration
 	}
-	report := Report{
+	return report{
 		TestName:     plan.T.Name(),
 		FullDuration: dur,
 		RequestCount: len(results),
@@ -223,6 +231,4 @@ func (plan *Plan) Summary(results []Result) Report {
 		rampups:      plan.rampups,
 		rampdowns:    plan.rampdowns,
 	}
-	fmt.Printf("%v\n", report)
-	return report
 }
