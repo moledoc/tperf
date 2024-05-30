@@ -29,21 +29,49 @@ type Result struct {
 type rps float64 // request per second
 
 type Report struct {
-	TestName     string
-	FullDuration time.Duration
-	RequestCount int
-	P50          time.Duration
-	P90          time.Duration
-	P95          time.Duration
-	P99          time.Duration
-	Avg          time.Duration
-	Std          time.Duration
-	Throughput   rps
-	Errors       int
+	TestName              string
+	FullDuration          time.Duration
+	RequestCount          int
+	P50                   time.Duration
+	P90                   time.Duration
+	P95                   time.Duration
+	P99                   time.Duration
+	Avg                   time.Duration
+	Std                   time.Duration
+	Throughput            rps
+	Errors                int
+	RampUp                time.Duration
+	RampUpRequestCounts   []int
+	RampDownRequestCounts []int
 }
 
 func (r Report) String() string {
-	return fmt.Sprintf("Test name: %s\nFull duration: %v\nRequest count: %v\nP50: %v\nP90: %v\nP95: %v\nP99: %v\nAvgerage: %v\nStandard deviation: %v\nThroughput: %v requests/second\nErrors count: %v", r.TestName, r.FullDuration, r.RequestCount, r.P50, r.P90, r.P95, r.P99, r.Avg, r.Std, r.Throughput, r.Errors)
+	return fmt.Sprintf("\n"+
+		"----------------------------------------------\n"+
+		"%20s: %s\n"+
+		"%20s: %v\n"+
+		"%20s: %v\n"+
+		"%20s: %v\n"+
+		"%20s: %v\n"+
+		"%20s: %v\n"+
+		"%20s: %v\n"+
+		"%20s: %v\n"+
+		"%20s: %v\n"+
+		"%20s: %v req/s\n"+
+		"%20s: %v\n"+
+		"----------------------------------------------",
+		"Test name", r.TestName,
+		"Full duration", r.FullDuration,
+		"Request count", r.RequestCount,
+		"P50", r.P50,
+		"P90", r.P90,
+		"P95", r.P95,
+		"P99", r.P99,
+		"Avg", r.Avg,
+		"Std", r.Std,
+		"Throughput", r.Throughput,
+		"Error count", r.Errors,
+	)
 }
 
 func (plan *Plan) Execute() []Result {
@@ -186,6 +214,6 @@ func (plan *Plan) Summary(results []Result) Report {
 		Throughput:   rps(float64(len(results)) / dur.Seconds()),
 		Errors:       errCount,
 	}
-	plan.T.Logf("%v\n", report)
+	fmt.Printf("%v\n", report)
 	return report
 }
