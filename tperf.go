@@ -21,7 +21,9 @@ type Plan struct {
 	LoadFor          time.Duration
 	Setup            func() (any, error)
 	Test             func(any) (any, error)
-	Cleanup          func(any)
+	Cleanup          func(any) (any, error)
+	Asserts          func(*testing.T, Report) (any, error)
+	Formalize        func(any) (any, error)
 }
 
 type result struct {
@@ -30,7 +32,7 @@ type result struct {
 	Error    error
 }
 
-type report struct {
+type Report struct {
 	TestName     string
 	FullDuration time.Duration
 	RequestCount int
@@ -47,8 +49,8 @@ type report struct {
 	rampdowns    []int
 }
 
-func (r report) String() string {
-	fieldCount := reflect.TypeOf(report{}).NumField()
+func (r Report) String() string {
+	fieldCount := reflect.TypeOf(Report{}).NumField()
 	format := fmt.Sprintf("\n%37s\n\n", "-- Summary --")
 	for i := 0; i < fieldCount; i++ {
 		format += "%30s: %v\n"
@@ -72,11 +74,11 @@ func (r report) String() string {
 	)
 }
 
-func (r report) Print() {
+func (r Report) Print() {
 	fmt.Println(r)
 }
 
-func (r report) Fprint(w io.Writer) {
+func (r Report) Fprint(w io.Writer) {
 	fmt.Fprintf(w, r.String())
 }
 
@@ -187,7 +189,7 @@ func (plan *Plan) Execute() []result {
 	return results
 }
 
-func (plan *Plan) Summary(results []result) report {
+func (plan *Plan) Summary(results []result) Report {
 	slices.SortFunc(results, func(a result, b result) int {
 		return cmp.Compare(a.Duration, b.Duration)
 	})
@@ -215,7 +217,7 @@ func (plan *Plan) Summary(results []result) report {
 		}
 		dur += results[i].Duration
 	}
-	return report{
+	return Report{
 		TestName:     plan.T.Name(),
 		FullDuration: dur,
 		RequestCount: len(results),

@@ -24,7 +24,21 @@ func TestXxx(t *testing.T) {
 		}
 		return resp, err
 	}
-	cleanup := func(any) {
+	cleanup := func(any) (any, error) {
+		return nil, nil
+	}
+	asserts := func(t *testing.T, report tperf.Report) (any, error) {
+		KPI := 375 * time.Millisecond
+		if report.P95 > time.Duration(KPI) {
+			t.Logf("P95 greater than allowed, expected <%v, got %v\n", KPI, report.P95)
+			t.FailNow()
+		}
+		return nil, nil
+	}
+	formalize := func(any) (any, error) {
+		// EXAMPLE: uploading results
+		fmt.Println("uploading results")
+		return nil, nil
 	}
 	plan := tperf.Plan{
 		T:                t,
@@ -34,9 +48,13 @@ func TestXxx(t *testing.T) {
 		Setup:            setup,
 		Test:             test,
 		Cleanup:          cleanup,
+		Asserts:          asserts,
+		Formalize:        formalize,
 	}
 	results := plan.Execute()
 	// fmt.Println(results)
 	report := plan.Summary(results)
 	report.Print()
+	plan.Asserts(t, report)
+	plan.Formalize(nil)
 }
