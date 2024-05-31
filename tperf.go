@@ -22,8 +22,8 @@ type Plan struct {
 	Setup            func() (any, error)
 	Test             func(any) (any, error)
 	Cleanup          func(any) (any, error)
-	Asserts          func(*testing.T, Report) (any, error)
-	Formalize        func(any) (any, error)
+	Assert           func(Report) (any, error)
+	Formalize        func() (any, error)
 }
 
 type result struct {
@@ -47,12 +47,13 @@ type Report struct {
 	Ramping      time.Duration
 	rampups      []int
 	rampdowns    []int
+	Results      []result
 }
 
 func (r Report) String() string {
 	fieldCount := reflect.TypeOf(Report{}).NumField()
 	format := fmt.Sprintf("\n%37s\n\n", "-- Summary --")
-	for i := 0; i < fieldCount; i++ {
+	for i := 0; i < fieldCount-1; i++ { // ignore: Results
 		format += "%30s: %v\n"
 	}
 	return fmt.Sprintf(
@@ -82,7 +83,7 @@ func (r Report) Fprint(w io.Writer) {
 	fmt.Fprintf(w, r.String())
 }
 
-func (plan *Plan) Execute() []result {
+func (plan *Plan) Execute() Report {
 	plan.T.Helper()
 
 	load := max(int(plan.LoadFor.Seconds()), 1)
@@ -186,7 +187,10 @@ func (plan *Plan) Execute() []result {
 	plan.rampups = rampups
 	plan.rampdowns = rampdowns
 
-	return results
+	report := plan.Summary(results)
+	plan.Assert(report)
+	plan.Formalize()
+	return report
 }
 
 func (plan *Plan) Summary(results []result) Report {
@@ -232,5 +236,6 @@ func (plan *Plan) Summary(results []result) Report {
 		Ramping:      plan.Ramping,
 		rampups:      plan.rampups,
 		rampdowns:    plan.rampdowns,
+		Results:      results,
 	}
 }
