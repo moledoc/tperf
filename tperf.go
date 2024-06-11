@@ -43,7 +43,7 @@ type Report struct {
 	Avg          time.Duration
 	Std          time.Duration
 	Throughput   float64 // req/s
-	Errors       int
+	ErrorRate    float64
 	Ramping      time.Duration
 	rampups      []int
 	rampdowns    []int
@@ -68,7 +68,7 @@ func (r Report) String() string {
 		"Avg", r.Avg,
 		"Std", r.Std,
 		"Throughput (req/s)", r.Throughput,
-		"Error count", r.Errors,
+		"Error rate", r.ErrorRate,
 		"Ramping", r.Ramping,
 		"Ramp-up req/s", r.rampups,
 		"Ramp-down req/s", r.rampdowns,
@@ -232,7 +232,7 @@ func (plan *Plan) Summary(results []result) Report {
 		Avg:          avg,
 		Std:          std(results, avg.Milliseconds()),
 		Throughput:   float64(len(results)) / dur.Seconds(),
-		Errors:       errCount,
+		ErrorRate:    float64(errCount) / float64(len(results)),
 		Ramping:      plan.Ramping,
 		rampups:      plan.rampups,
 		rampdowns:    plan.rampdowns,

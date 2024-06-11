@@ -44,7 +44,7 @@ func TestXxx(t *testing.T) {
 		T:                t,
 		Ramping:          time.Duration(0 * time.Second),
 		RequestPerSecond: 10,
-		LoadFor:          time.Duration(1 * time.Second),
+		LoadFor:          time.Duration(4 * time.Second),
 		Setup:            setup,
 		Test:             test,
 		Cleanup:          cleanup,
