@@ -1,4 +1,4 @@
-package tperf
+package tsvc
 
 import (
 	"cmp"
@@ -18,7 +18,7 @@ type Plan struct {
 	rampups          []int
 	rampdowns        []int
 	RequestPerSecond int
-	LoadFor          time.Duration
+	Duration         time.Duration
 	Setup            func() (any, error)
 	Test             func(any) (any, error)
 	Cleanup          func(any) (any, error)
@@ -86,7 +86,7 @@ func (r Report) Fprint(w io.Writer) {
 func (plan *Plan) Execute() Report {
 	plan.T.Helper()
 
-	load := max(int(plan.LoadFor.Seconds()), 1)
+	load := max(int(plan.Duration.Seconds()), 1)
 
 	collector := make(chan result, load*plan.RequestPerSecond)
 	var wg sync.WaitGroup

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/moledoc/tperf"
+	"github.com/moledoc/tsvc"
 )
 
 func TestXxx(t *testing.T) {
@@ -27,7 +27,7 @@ func TestXxx(t *testing.T) {
 	cleanup := func(any) (any, error) {
 		return nil, nil
 	}
-	asserts := func(report tperf.Report) (any, error) {
+	asserts := func(report tsvc.Report) (any, error) {
 		KPI := 375 * time.Millisecond
 		if report.P95 > time.Duration(KPI) {
 			t.Logf("P95 greater than allowed, expected <%v, got %v\n", KPI, report.P95)
@@ -40,11 +40,11 @@ func TestXxx(t *testing.T) {
 		fmt.Println("uploading results")
 		return nil, nil
 	}
-	plan := tperf.Plan{
+	plan := tsvc.Plan{
 		T:                t,
 		Ramping:          time.Duration(0 * time.Second),
 		RequestPerSecond: 10,
-		LoadFor:          time.Duration(4 * time.Second),
+		Duration:         time.Duration(4 * time.Second),
 		Setup:            setup,
 		Test:             test,
 		Cleanup:          cleanup,
