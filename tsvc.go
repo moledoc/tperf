@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-type Plan struct {
+type Case struct {
 	T                *testing.T
 	Ramping          time.Duration
 	rampups          []int
@@ -83,18 +83,19 @@ func (r Report) Fprint(w io.Writer) {
 	fmt.Fprintf(w, r.String())
 }
 
-func (plan *Plan) Execute() Report {
-	plan.T.Helper()
+func (kase *Case) Execute() Report {
+	kase.T.Helper()
 
-	load := max(int(plan.Duration.Seconds()), 1)
+	kase.RequestPerSecond = max(kase.RequestPerSecond, 1)
+	kase.Duration = max(kase.Duration, 1*time.Second)
 
-	collector := make(chan result, load*plan.RequestPerSecond)
+	collector := make(chan result, int(math.Ceil(kase.Duration.Seconds()))*kase.RequestPerSecond)
 	var wg sync.WaitGroup
 
 	// ramp-up
-	step := float64(plan.RequestPerSecond) / max(plan.Ramping.Seconds(), 1)
+	step := float64(kase.RequestPerSecond) / max(kase.Ramping.Seconds(), 1)
 	var rampups []int
-	for rps := float64(1); 0 < plan.Ramping.Seconds() && rps <= float64(plan.RequestPerSecond); rps += step {
+	for rps := float64(1); 0 < kase.Ramping.Seconds() && rps <= float64(kase.RequestPerSecond); rps += step {
 		iterStart := time.Now()
 		j := 0
 		for i := float64(0); i < rps; i++ {
@@ -102,52 +103,52 @@ func (plan *Plan) Execute() Report {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				req, err := plan.Setup()
+				req, err := kase.Setup()
 				if err != nil {
 					return
 				}
-				resp, err := plan.Test(req)
+				resp, err := kase.Test(req)
 				if err != nil {
 					return
 				}
-				plan.Cleanup(resp)
+				kase.Cleanup(resp)
 			}()
 		}
 		rampups = append(rampups, j)
 		iterDuration := time.Since(iterStart)
 		<-time.After(max(1*time.Second-iterDuration, 0))
 	}
-	plan.T.Logf("Rampup done\n")
+	kase.T.Logf("Rampup done\n")
 
 	// hit
-	for i := 0; i < load; i++ {
+	for i := float64(0); i < kase.Duration.Seconds(); i++ {
 		iterStart := time.Now()
-		for i := 0; i < plan.RequestPerSecond; i++ {
+		for i := 0; i < kase.RequestPerSecond; i++ {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				req, err := plan.Setup()
+				req, err := kase.Setup()
 				if err != nil {
 					return
 				}
 				start := time.Now()
-				resp, err := plan.Test(req)
+				resp, err := kase.Test(req)
 				dur := time.Since(start)
 				collector <- result{Duration: dur, Error: err}
 				if err != nil {
 					return
 				}
-				plan.Cleanup(resp)
+				kase.Cleanup(resp)
 			}()
 		}
 		iterDuration := time.Since(iterStart)
 		<-time.After(max(time.Duration(1*time.Second)-iterDuration, 0))
 	}
-	plan.T.Logf("Test done\n")
+	kase.T.Logf("Test done\n")
 
 	// ramp-down
 	var rampdowns []int
-	for rps := float64(plan.RequestPerSecond); 0 < plan.Ramping.Seconds() && float64(1) <= rps; rps -= step {
+	for rps := float64(kase.RequestPerSecond); 0 < kase.Ramping.Seconds() && float64(1) <= rps; rps -= step {
 		iterStart := time.Now()
 		j := 0
 		for i := float64(0); i < rps; i++ {
@@ -155,15 +156,15 @@ func (plan *Plan) Execute() Report {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				req, err := plan.Setup()
+				req, err := kase.Setup()
 				if err != nil {
 					return
 				}
-				resp, err := plan.Test(req)
+				resp, err := kase.Test(req)
 				if err != nil {
 					return
 				}
-				plan.Cleanup(resp)
+				kase.Cleanup(resp)
 			}()
 		}
 		rampdowns = append(rampdowns, j)
@@ -171,7 +172,7 @@ func (plan *Plan) Execute() Report {
 		<-time.After(max(time.Duration(1*time.Second)-iterDuration, 0))
 	}
 
-	plan.T.Logf("Rampdown done\n")
+	kase.T.Logf("Rampdown done\n")
 
 	wg.Wait()
 	close(collector)
@@ -184,16 +185,16 @@ func (plan *Plan) Execute() Report {
 			i++
 		}
 	}
-	plan.rampups = rampups
-	plan.rampdowns = rampdowns
+	kase.rampups = rampups
+	kase.rampdowns = rampdowns
 
-	report := plan.Summary(results)
-	plan.Assert(report)
-	plan.Formalize()
+	report := kase.Summary(results)
+	kase.Assert(report)
+	kase.Formalize()
 	return report
 }
 
-func (plan *Plan) Summary(results []result) Report {
+func (kase *Case) Summary(results []result) Report {
 	slices.SortFunc(results, func(a result, b result) int {
 		return cmp.Compare(a.Duration, b.Duration)
 	})
@@ -222,7 +223,7 @@ func (plan *Plan) Summary(results []result) Report {
 		dur += results[i].Duration
 	}
 	return Report{
-		TestName:     plan.T.Name(),
+		TestName:     kase.T.Name(),
 		FullDuration: dur,
 		RequestCount: len(results),
 		P50:          results[len(results)*50/100].Duration,
@@ -233,9 +234,9 @@ func (plan *Plan) Summary(results []result) Report {
 		Std:          std(results, avg.Milliseconds()),
 		Throughput:   float64(len(results)) / dur.Seconds(),
 		ErrorRate:    float64(errCount) / float64(len(results)),
-		Ramping:      plan.Ramping,
-		rampups:      plan.rampups,
-		rampdowns:    plan.rampdowns,
+		Ramping:      kase.Ramping,
+		rampups:      kase.rampups,
+		rampdowns:    kase.rampdowns,
 		Results:      results,
 	}
 }
