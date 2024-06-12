@@ -1,3 +1,3 @@
-module github.com/moledo/c/tperf
+module github.com/moledoc/tperf
 
 go 1.22.0
