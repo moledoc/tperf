@@ -210,7 +210,7 @@ func (plan *Plan) Summary(results []result) Report {
 			step := avg - res.Duration.Milliseconds()
 			std += step * step
 		}
-		return time.Duration(math.Sqrt(float64(std/int64(len(results)-1)))) * time.Millisecond
+		return time.Duration(math.Sqrt(float64(std/int64(max(len(results)-1,1))))) * time.Millisecond
 	}
 	avg := mean(results)
 	errCount := 0
