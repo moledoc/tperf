@@ -3,7 +3,9 @@ package tsvc
 import (
 	"cmp"
 	"fmt"
+	"io"
 	"math"
+	"os"
 	"reflect"
 	"slices"
 	"sync"
@@ -13,6 +15,7 @@ import (
 
 type Plan struct {
 	T                *testing.T
+	W                io.Writer
 	Ramping          time.Duration
 	rampups          []int
 	rampdowns        []int
@@ -147,8 +150,11 @@ func (plan *Plan) Run() *Report {
 	plan.T.Helper()
 
 	if plan.Setup == nil || plan.Test == nil || plan.Cleanup == nil {
-		plan.T.Fatalf("required function is not defined: setup=%v, test=%v, cleanup=%v", plan.Setup, plan.Test, plan.Cleanup)
+		plan.T.Fatalf("required function is not defined: Setup=%v, Test=%v, Cleanup=%v", plan.Setup, plan.Test, plan.Cleanup)
 		return nil
+	}
+	if plan.W == nil {
+		plan.W = os.Stderr
 	}
 
 	plan.RequestPerSecond = max(plan.RequestPerSecond, 1)
@@ -175,15 +181,17 @@ func (plan *Plan) Run() *Report {
 			}()
 		}
 		rampups = append(rampups, j)
+		fmt.Fprintf(plan.W, "[INFO]: %v - Rampup at %v%%\n", plan.T.Name(), (rps/float64(plan.RequestPerSecond)*100))
 		iterDuration := time.Since(iterStart)
 		<-time.After(max(1*time.Second-iterDuration, 0))
 	}
 	if plan.Ramping != 0 {
-		plan.T.Logf("Rampup done\n")
+		fmt.Fprintf(plan.W, "[INFO]: %v - Rampup done\n", plan.T.Name())
 	}
 
 	// test
-	for i := float64(0); i < plan.Duration.Seconds(); i++ {
+	end := plan.Duration.Seconds()
+	for i := float64(0); i < end; i++ {
 		iterStart := time.Now()
 		for i := 0; i < plan.RequestPerSecond; i++ {
 			wg.Add(1)
@@ -200,10 +208,11 @@ func (plan *Plan) Run() *Report {
 				plan.Cleanup(resp, err)
 			}()
 		}
+		fmt.Fprintf(plan.W, "[INFO]: %v - Testing at %v%%\n", plan.T.Name(), (min(i+1, end)/end)*100)
 		iterDuration := time.Since(iterStart)
-		<-time.After(max(time.Duration(1*time.Second)-iterDuration, 0))
+		<-time.After(max(1*time.Second-iterDuration, 0))
 	}
-	plan.T.Logf("Test done\n")
+	fmt.Fprintf(plan.W, "[INFO]: %v - Test done\n", plan.T.Name())
 
 	// ramp-down
 	var rampdowns []int
@@ -222,12 +231,12 @@ func (plan *Plan) Run() *Report {
 			}()
 		}
 		rampdowns = append(rampdowns, j)
+		fmt.Fprintf(plan.W, "[INFO]: %v - Rampdown at %v%%\n", plan.T.Name(), (1/rps)*100)
 		iterDuration := time.Since(iterStart)
-		<-time.After(max(time.Duration(1*time.Second)-iterDuration, 0))
+		<-time.After(max(1*time.Second-iterDuration, 0))
 	}
-
 	if plan.Ramping != 0 {
-		plan.T.Logf("Rampdown done\n")
+		fmt.Fprintf(plan.W, "[INFO]: %v - Rampdown done\n", plan.T.Name())
 	}
 
 	wg.Wait()

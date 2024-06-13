@@ -96,16 +96,17 @@ func TestXxx2(t *testing.T) {
 		fmt.Println("uploading results")
 		return nil, nil
 	}
+	_ = formalize
 	plan := tsvc.Plan{
 		T:                t,
-		Ramping:          time.Duration(2 * time.Second),
-		RequestPerSecond: 5,
-		Duration:         time.Duration(3 * time.Second),
+		Ramping:          time.Duration(5 * time.Second),
+		RequestPerSecond: 10,
+		Duration:         time.Duration(5 * time.Second),
 		Setup:            setup,
 		Test:             test,
 		Cleanup:          cleanup,
 		Assert:           asserts,
-		Formalize:        formalize,
+		Formalize:        nil,
 	}
 	report := plan.Run()
 	fmt.Println(report)
