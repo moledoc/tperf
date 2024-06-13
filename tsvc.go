@@ -41,6 +41,11 @@ type ramping struct {
 	rampdowns []int
 }
 
+type ane struct {
+	Any   any
+	Error error
+}
+
 type Report struct {
 	T            *testing.T
 	TestDuration time.Duration
@@ -56,12 +61,14 @@ type Report struct {
 	ErrorRate    float64
 	Ramping      ramping
 	Results      []result
+	Asserts      ane
+	Formalize    ane
 }
 
 func (r Report) String() string {
 	fieldCount := reflect.TypeOf(Report{}).NumField()
 	format := fmt.Sprintf("\n%37s\n\n", "-- Summary --")
-	for i := 0; i < fieldCount-1-1; i++ { // ignore: Results, Ramping
+	for i := 0; i < fieldCount-1-1-1-1; i++ { // ignore: Ramping, Results, Asserts, Formalize
 		format += "%30s: %v\n"
 	}
 	return fmt.Sprintf(
@@ -181,7 +188,7 @@ func (plan *Plan) Run() *Report {
 			}()
 		}
 		rampups = append(rampups, j)
-		fmt.Fprintf(plan.W, "[INFO]: %v - Rampup at %v%%\n", plan.T.Name(), (rps/float64(plan.RequestPerSecond)*100))
+		fmt.Fprintf(plan.W, "[INFO]: %v - Rampup at %v%%\n", plan.T.Name(), (rps / float64(plan.RequestPerSecond) * 100))
 		iterDuration := time.Since(iterStart)
 		<-time.After(max(1*time.Second-iterDuration, 0))
 	}
@@ -256,10 +263,18 @@ func (plan *Plan) Run() *Report {
 	report := plan.summary(results)
 
 	if plan.Assert != nil {
-		plan.Assert(report)
+		a, err := plan.Assert(report)
+		report.Asserts = ane{
+			Any:   a,
+			Error: err,
+		}
 	}
 	if plan.Formalize != nil {
-		plan.Formalize()
+		a, err := plan.Formalize()
+		report.Formalize = ane{
+			Any:   a,
+			Error: err,
+		}
 	}
 
 	return report
