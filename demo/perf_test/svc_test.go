@@ -10,13 +10,13 @@ import (
 )
 
 var (
-	globalPlan = func(t *testing.T) tsvc.Case {
-		return tsvc.Case{
+	globalPlan = func(t *testing.T) tsvc.Plan {
+		return tsvc.Plan{
 			Setup: func() (any, error) {
 				route := "work"
 				return route, nil
 			},
-			Test: func(req any) (any, error) {
+			Test: func(req any, _ error) (any, error) {
 				route := req.(string)
 				path := fmt.Sprintf("http://localhost:3000/%s", route)
 				resp, respErr := http.Get(path)
@@ -26,10 +26,10 @@ var (
 				}
 				return resp, err
 			},
-			Cleanup: func(any) (any, error) {
+			Cleanup: func(any, error) (any, error) {
 				return nil, nil
 			},
-			Assert: func(report tsvc.Report) (any, error) {
+			Assert: func(report *tsvc.Report) (any, error) {
 				KPI := 375 * time.Millisecond
 				if report.P95 > time.Duration(KPI) {
 					t.Logf("P95 greater than allowed, expected <%v, got %v\n", KPI, report.P95)
@@ -52,9 +52,8 @@ func TestXxx_functional(t *testing.T) {
 	plan.RequestPerSecond = 1
 	plan.Ramping = time.Duration(0 * time.Second)
 	plan.Duration = time.Duration(0 * time.Second)
-	report := plan.Execute()
-	// fmt.Println(results)
-	report.Print()
+	report := plan.Run()
+	fmt.Println(report)
 }
 
 func TestXxx_performance(t *testing.T) {
@@ -63,9 +62,7 @@ func TestXxx_performance(t *testing.T) {
 	plan.RequestPerSecond = 10
 	plan.Ramping = time.Duration(10 * time.Second)
 	plan.Duration = time.Duration(4600 * time.Millisecond)
-	report := plan.Execute()
-	// fmt.Println(results)
-	report.Print()
+	fmt.Println(plan.Run())
 }
 
 func TestXxx2(t *testing.T) {
@@ -73,7 +70,7 @@ func TestXxx2(t *testing.T) {
 		route := "work"
 		return route, nil
 	}
-	test := func(req any) (any, error) {
+	test := func(req any, _ error) (any, error) {
 		route := req.(string)
 		path := fmt.Sprintf("http://localhost:3000/%s", route)
 		resp, respErr := http.Get(path)
@@ -83,10 +80,10 @@ func TestXxx2(t *testing.T) {
 		}
 		return resp, err
 	}
-	cleanup := func(any) (any, error) {
+	cleanup := func(any, error) (any, error) {
 		return nil, nil
 	}
-	asserts := func(report tsvc.Report) (any, error) {
+	asserts := func(report *tsvc.Report) (any, error) {
 		KPI := 375 * time.Millisecond
 		if report.P95 > time.Duration(KPI) {
 			t.Logf("P95 greater than allowed, expected <%v, got %v\n", KPI, report.P95)
@@ -99,18 +96,19 @@ func TestXxx2(t *testing.T) {
 		fmt.Println("uploading results")
 		return nil, nil
 	}
-	plan := tsvc.Case{
+	plan := tsvc.Plan{
 		T:                t,
-		Ramping:          time.Duration(0 * time.Second),
-		RequestPerSecond: 10,
-		Duration:         time.Duration(4 * time.Second),
+		Ramping:          time.Duration(2 * time.Second),
+		RequestPerSecond: 5,
+		Duration:         time.Duration(3 * time.Second),
 		Setup:            setup,
 		Test:             test,
 		Cleanup:          cleanup,
 		Assert:           asserts,
 		Formalize:        formalize,
 	}
-	report := plan.Execute()
-	// fmt.Println(results)
-	report.Print()
+	report := plan.Run()
+	fmt.Println(report)
+	fmt.Printf("%+v\n", report.Results)
+	fmt.Println(report.Ramping)
 }
