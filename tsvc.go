@@ -13,6 +13,9 @@ import (
 	"time"
 )
 
+// NOTE: req/s is input and the output is response time under given load
+// TODO: naming so it's clear what is meant
+
 type Plan struct {
 	T                *testing.T
 	W                io.Writer
@@ -29,9 +32,11 @@ type Plan struct {
 }
 
 type result struct {
-	Duration time.Duration
-	Response any
-	Error    error
+	StartTime int64 // utc time in millisec
+	EndTime   int64 // utc time in millisec
+	Duration  time.Duration
+	Response  any
+	Error     error
 }
 
 type ramping struct {
@@ -47,22 +52,24 @@ type ane struct {
 }
 
 type Report struct {
-	T            *testing.T
-	TestDuration time.Duration
-	RequestCount int
-	P50          time.Duration
-	P90          time.Duration
-	P95          time.Duration
-	P99          time.Duration
-	Avg          time.Duration
-	Std          time.Duration
-	Throughput   float64 // req/s
-	ErrorCount   int
-	ErrorRate    float64
-	Ramping      ramping
-	Results      []result
-	Asserts      ane
-	Formalize    ane
+	T                *testing.T
+	RequestPerSecond int
+	TestDuration     time.Duration
+	RequestCount     int
+	P50              time.Duration
+	P90              time.Duration
+	P95              time.Duration
+	P99              time.Duration
+	Avg              time.Duration
+	Std              time.Duration
+	SvcUnderLoad     time.Duration
+	Throughput       float64 // req/s
+	ErrorCount       int
+	ErrorRate        float64
+	Ramping          ramping
+	Results          []result
+	Asserts          ane
+	Formalize        ane
 }
 
 func (r Report) String() string {
@@ -74,10 +81,12 @@ func (r Report) String() string {
 	return fmt.Sprintf(
 		format,
 		"Test name", r.T.Name(),
+		"Request/second", r.RequestPerSecond,
 		"Test duration", r.TestDuration,
 		"Request count", r.RequestCount,
 		"Error count", r.ErrorCount,
 		"Error rate (%)", r.ErrorRate,
+		"Service under load", r.SvcUnderLoad,
 		"Throughput (req/s)", r.Throughput,
 		"P50", r.P50,
 		"P90", r.P90,
@@ -131,18 +140,20 @@ func (plan *Plan) summary(results []result) *Report {
 		dur += results[i].Duration
 	}
 	return &Report{
-		T:            plan.T,
-		TestDuration: dur,
-		RequestCount: len(results),
-		P50:          results[len(results)*50/100].Duration,
-		P90:          results[len(results)*90/100].Duration,
-		P95:          results[len(results)*95/100].Duration,
-		P99:          results[len(results)*99/100].Duration,
-		Avg:          avg,
-		Std:          std(results, avg.Milliseconds()),
-		Throughput:   float64(len(results)) / dur.Seconds(),
-		ErrorCount:   errCount,
-		ErrorRate:    float64(errCount) / float64(len(results)),
+		T:                plan.T,
+		RequestPerSecond: plan.RequestPerSecond,
+		TestDuration:     plan.Duration,
+		RequestCount:     len(results),
+		P50:              results[len(results)*50/100].Duration,
+		P90:              results[len(results)*90/100].Duration,
+		P95:              results[len(results)*95/100].Duration,
+		P99:              results[len(results)*99/100].Duration,
+		Avg:              avg,
+		Std:              std(results, avg.Milliseconds()),
+		SvcUnderLoad:     dur,
+		Throughput:       float64(len(results)) / dur.Seconds(),
+		ErrorCount:       errCount,
+		ErrorRate:        float64(errCount) / float64(len(results)),
 		Ramping: ramping{
 			T:         plan.T,
 			Ramping:   plan.Ramping,
@@ -210,7 +221,13 @@ func (plan *Plan) Run() *Report {
 				start := time.Now()
 				resp, err := plan.Test(req, err)
 				dur := time.Since(start)
-				collector <- result{Duration: dur, Error: err}
+				collector <- result{
+					StartTime: start.UTC().UnixMilli(),
+					EndTime:   start.Add(dur).UTC().UnixMilli(),
+					Duration:  dur,
+					Response:  resp,
+					Error:     err,
+				}
 
 				plan.Cleanup(resp, err)
 			}()
